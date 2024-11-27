@@ -5,26 +5,30 @@ import (
 	"net/http"
 )
 
-type Server struct {
+var wishlist = []Wish{}
+
+type Config struct {
 	port string
 }
 
-func NewServer(port string) *Server {
-	return &Server{
+func NewServer(port string) *Config {
+	return &Config{
 		port: port,
 	}
 }
 
-func (s *Server) Run() error {
-	router := http.NewServeMux()
+func (s *Config) Run() error {
+	mux := http.NewServeMux()
 
-    router.HandleFunc("GET /", WelcomeHandler)
+    mux.HandleFunc("GET /wishes", GetWishesHandler)
+    mux.HandleFunc("POST /wishes", SaveWishHandler)
 
     server := http.Server{
         Addr: s.port,
-        Handler: router,
+        Handler: mux,
     }
 
     log.Printf("Server is running at %s", s.port)
     return server.ListenAndServe()
 }
+
