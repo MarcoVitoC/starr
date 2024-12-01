@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net/http"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 func GetWishesHandler(w http.ResponseWriter, r *http.Request) {
@@ -19,6 +21,29 @@ func GetWishesHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+func GetWishHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	for _, wish := range wishlist {
+		if wish.ID != id { continue }
+		if err := json.NewEncoder(w).Encode(wish); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	http.Error(w, "Wish not found!", http.StatusNotFound)
+}
+
 func SaveWishHandler(w http.ResponseWriter, r *http.Request) {
 	var payload Wish
 
@@ -30,6 +55,7 @@ func SaveWishHandler(w http.ResponseWriter, r *http.Request) {
 
 	now := time.Now().UTC()
 	newWish := Wish{
+		ID: uuid.New(),
 		Name: payload.Name,
 		Description: payload.Description,
 		CreatedAt: &now,
