@@ -24,6 +24,7 @@ func (s *Config) Run() error {
     mux.HandleFunc("GET /wishes/{id}", GetWishHandler)
     mux.HandleFunc("POST /wishes", SaveWishHandler)
     mux.HandleFunc("PUT /wishes/{id}", UpdateWishHandler)
+    mux.HandleFunc("DELETE /wishes/{id}", DeleteWishHandler)
 
     server := http.Server{
         Addr: s.port,

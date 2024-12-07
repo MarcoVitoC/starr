@@ -125,7 +125,7 @@ func UpdateWishHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.WriteHeader(http.StatusCreated)
+	w.WriteHeader(http.StatusOK)
 }
 
 func updateWish(toBeUpdatedWish Wish, i int) error {
@@ -139,4 +139,26 @@ func updateWish(toBeUpdatedWish Wish, i int) error {
 
 	wishlist[i] = toBeUpdatedWish
 	return nil
+}
+
+func DeleteWishHandler(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	for i, wish := range wishlist {
+		if wish.ID != id { continue }
+		if err := json.NewEncoder(w).Encode(wish); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		wishlist = append(wishlist[:i], wishlist[i + 1:]...)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	http.Error(w, "Wish not found!", http.StatusNotFound)
 }
