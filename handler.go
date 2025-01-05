@@ -1,10 +1,10 @@
 package main
 
 import (
-	"fmt"
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"time"
 
@@ -19,8 +19,27 @@ type WishHandler struct {
 func (h *WishHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	err := json.NewEncoder(w).Encode(wishlist)
+	query := `SELECT * FROM wishes`
+	rows, err := h.conn.Query(context.Background(), query)
 	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var wishes []Wish
+	for rows.Next() {
+		var wish Wish
+
+		if err := rows.Scan(&wish.ID, &wish.Name, &wish.Description, &wish.CreatedAt, &wish.UpdatedAt); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		wishes = append(wishes, wish)
+	}
+	
+	if err := json.NewEncoder(w).Encode(wishes); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -37,18 +56,21 @@ func (h *WishHandler) GetById(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	for _, wish := range wishlist {
-		if wish.ID != id { continue }
-		if err := json.NewEncoder(w).Encode(wish); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
+	query := `SELECT * FROM wishes WHERE id = $1`
+	row := h.conn.QueryRow(context.Background(), query, id)
 
-		w.WriteHeader(http.StatusOK)
+	var wish Wish
+	if err := row.Scan(&wish.ID, &wish.Name, &wish.Description, &wish.CreatedAt, &wish.UpdatedAt); err != nil {
+		http.Error(w, "Wish not found!", http.StatusNotFound)
 		return
 	}
 
-	http.Error(w, "Wish not found!", http.StatusNotFound)
+	if err := json.NewEncoder(w).Encode(wish); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
 }
 
 func (h *WishHandler) Save(w http.ResponseWriter, r *http.Request) {
@@ -86,7 +108,7 @@ func saveWish(db *pgxpool.Pool, newWish Wish) error {
 		return errors.New("ERROR: description field is required")
 	}
 
-	query := `INSERT INTO wishes (id, name, description, created_at, updated_at) VALUES($1, $2, $3, $4)`
+	query := `INSERT INTO wishes (id, name, description, created_at, updated_at) VALUES($1, $2, $3, $4, $5)`
 	_, err := db.Exec(
 		context.Background(), 
 		query, 
@@ -94,7 +116,7 @@ func saveWish(db *pgxpool.Pool, newWish Wish) error {
 	)
 
 	if err != nil {
-		fmt.Printf("ERROR: %s", err)
+		log.Fatal("ERROR: ", err)
 		return errors.New("ERROR: failed to insert new wish")
 	}
 	
@@ -108,24 +130,24 @@ func (h *WishHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var index int
-	var selectedWish Wish
-	for i, wish := range wishlist {
-		if wish.ID != id { continue }
-		if err := json.NewEncoder(w).Encode(wish); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
+	query := `SELECT * FROM wishes WHERE id = $1`
+	row := h.conn.QueryRow(context.Background(), query, id)
 
-		index = i
-		selectedWish = wish
-		break
+	var selectedWish Wish
+	if err := row.Scan(
+		&selectedWish.ID, 
+		&selectedWish.Name, 
+		&selectedWish.Description, 
+		&selectedWish.CreatedAt, 
+		&selectedWish.UpdatedAt,
+	); err != nil {
+		http.Error(w, "Wish not found!", http.StatusNotFound)
+		return
 	}
 
 	var payload Wish
-	decodeErr := json.NewDecoder(r.Body).Decode(&payload)
-	if decodeErr != nil {
-		http.Error(w, decodeErr.Error(), http.StatusBadRequest)
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -138,7 +160,7 @@ func (h *WishHandler) Update(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt: &now,
 	}
 
-	if err := updateWish(toBeUpdatedWish, index); err != nil {
+	if err := updateWish(h.conn, toBeUpdatedWish, id); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -146,7 +168,7 @@ func (h *WishHandler) Update(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func updateWish(toBeUpdatedWish Wish, i int) error {
+func updateWish(db *pgxpool.Pool, toBeUpdatedWish Wish, id uuid.UUID) error {
 	if toBeUpdatedWish.Name == "" {
 		return errors.New("name field is required")
 	}
@@ -155,7 +177,16 @@ func updateWish(toBeUpdatedWish Wish, i int) error {
 		return errors.New("description field is required")
 	}
 
-	wishlist[i] = toBeUpdatedWish
+	query := `
+		UPDATE wishes 
+		SET name = $1, description = $2 
+		WHERE id = $3`
+	_, err := db.Exec(context.Background(), query, toBeUpdatedWish.Name, toBeUpdatedWish.Description, id)
+	if err != nil {
+		log.Fatal("ERROR: ", err)
+		return errors.New("ERROR: failed to updated selected wish")
+	}
+
 	return nil
 }
 
@@ -166,17 +197,17 @@ func (h *WishHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	for i, wish := range wishlist {
-		if wish.ID != id { continue }
-		if err := json.NewEncoder(w).Encode(wish); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		wishlist = append(wishlist[:i], wishlist[i + 1:]...)
-		w.WriteHeader(http.StatusOK)
+	query := `DELETE FROM wishes WHERE id = $1`
+	result, err := h.conn.Exec(context.Background(), query, id)
+	if err != nil {
+		http.Error(w, "Failed to delete wish", http.StatusInternalServerError)
 		return
 	}
 
-	http.Error(w, "Wish not found!", http.StatusNotFound)
+	if result.RowsAffected() == 0 {
+		http.Error(w, "Wish not found!", http.StatusNotFound)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
 }

@@ -9,8 +9,6 @@ import (
 	"github.com/joho/godotenv"
 )
 
-var wishlist = []Wish{}
-
 type Config struct {
 	port string
 }
