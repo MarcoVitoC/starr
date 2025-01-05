@@ -5,6 +5,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+
+	"github.com/joho/godotenv"
 )
 
 var wishlist = []Wish{}
@@ -20,6 +22,11 @@ func NewServer(port string) *Config {
 }
 
 func (s *Config) Run() error {
+    err := godotenv.Load()
+    if err != nil {
+        log.Fatal("ERROR: Failed to load .env file")
+    }
+
     db, err := InitDB(context.Background(), os.Getenv("DATABASE_URL"))
     if err != nil {
         log.Fatal("ERROR: Unable to connect to database: ", err)
