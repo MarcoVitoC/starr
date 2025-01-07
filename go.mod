@@ -1,4 +1,4 @@
-module starr
+module github.com/MarcoVitoC/starr
 
 go 1.23.3
 

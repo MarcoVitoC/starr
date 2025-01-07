@@ -1,4 +1,4 @@
-package main
+package internal
 
 import (
 	"context"
@@ -12,15 +12,15 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type WishHandler struct {
+type WishService struct {
 	conn *pgxpool.Pool
 }
 
-func (h *WishHandler) GetAll(w http.ResponseWriter, r *http.Request) {
+func (s *WishService) GetAll(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	query := `SELECT * FROM wishes`
-	rows, err := h.conn.Query(context.Background(), query)
+	rows, err := s.conn.Query(context.Background(), query)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -38,7 +38,7 @@ func (h *WishHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 
 		wishes = append(wishes, wish)
 	}
-	
+
 	if err := json.NewEncoder(w).Encode(wishes); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -47,7 +47,7 @@ func (h *WishHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func (h *WishHandler) GetById(w http.ResponseWriter, r *http.Request) {
+func (s *WishService) GetById(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	id, err := uuid.Parse(r.PathValue("id"))
@@ -57,7 +57,7 @@ func (h *WishHandler) GetById(w http.ResponseWriter, r *http.Request) {
 	}
 
 	query := `SELECT * FROM wishes WHERE id = $1`
-	row := h.conn.QueryRow(context.Background(), query, id)
+	row := s.conn.QueryRow(context.Background(), query, id)
 
 	var wish Wish
 	if err := row.Scan(&wish.ID, &wish.Name, &wish.Description, &wish.CreatedAt, &wish.UpdatedAt); err != nil {
@@ -73,7 +73,7 @@ func (h *WishHandler) GetById(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func (h *WishHandler) Save(w http.ResponseWriter, r *http.Request) {
+func (s *WishService) Save(w http.ResponseWriter, r *http.Request) {
 	var payload Wish
 
 	err := json.NewDecoder(r.Body).Decode(&payload)
@@ -84,18 +84,18 @@ func (h *WishHandler) Save(w http.ResponseWriter, r *http.Request) {
 
 	now := time.Now().UTC()
 	newWish := Wish{
-		ID: uuid.New(),
-		Name: payload.Name,
+		ID:          uuid.New(),
+		Name:        payload.Name,
 		Description: payload.Description,
-		CreatedAt: &now,
-		UpdatedAt: nil,
+		CreatedAt:   &now,
+		UpdatedAt:   nil,
 	}
 
-	if err = saveWish(h.conn, newWish); err != nil {
+	if err = saveWish(s.conn, newWish); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	
+
 	w.WriteHeader(http.StatusCreated)
 }
 
@@ -110,8 +110,8 @@ func saveWish(db *pgxpool.Pool, newWish Wish) error {
 
 	query := `INSERT INTO wishes (id, name, description, created_at, updated_at) VALUES($1, $2, $3, $4, $5)`
 	_, err := db.Exec(
-		context.Background(), 
-		query, 
+		context.Background(),
+		query,
 		newWish.ID, newWish.Name, newWish.Description, newWish.CreatedAt, newWish.UpdatedAt,
 	)
 
@@ -119,11 +119,11 @@ func saveWish(db *pgxpool.Pool, newWish Wish) error {
 		log.Fatal("ERROR: ", err)
 		return errors.New("ERROR: failed to insert new wish")
 	}
-	
-	return nil;
+
+	return nil
 }
 
-func (h *WishHandler) Update(w http.ResponseWriter, r *http.Request) {
+func (s *WishService) Update(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -131,14 +131,14 @@ func (h *WishHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	query := `SELECT * FROM wishes WHERE id = $1`
-	row := h.conn.QueryRow(context.Background(), query, id)
+	row := s.conn.QueryRow(context.Background(), query, id)
 
 	var selectedWish Wish
 	if err := row.Scan(
-		&selectedWish.ID, 
-		&selectedWish.Name, 
-		&selectedWish.Description, 
-		&selectedWish.CreatedAt, 
+		&selectedWish.ID,
+		&selectedWish.Name,
+		&selectedWish.Description,
+		&selectedWish.CreatedAt,
 		&selectedWish.UpdatedAt,
 	); err != nil {
 		http.Error(w, "Wish not found!", http.StatusNotFound)
@@ -153,14 +153,14 @@ func (h *WishHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	now := time.Now().UTC()
 	toBeUpdatedWish := Wish{
-		ID: selectedWish.ID,
-		Name: payload.Name,
+		ID:          selectedWish.ID,
+		Name:        payload.Name,
 		Description: payload.Description,
-		CreatedAt: selectedWish.CreatedAt,
-		UpdatedAt: &now,
+		CreatedAt:   selectedWish.CreatedAt,
+		UpdatedAt:   &now,
 	}
 
-	if err := updateWish(h.conn, toBeUpdatedWish, id); err != nil {
+	if err := updateWish(s.conn, toBeUpdatedWish, id); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -190,7 +190,7 @@ func updateWish(db *pgxpool.Pool, toBeUpdatedWish Wish, id uuid.UUID) error {
 	return nil
 }
 
-func (h *WishHandler) Delete(w http.ResponseWriter, r *http.Request) {
+func (s *WishService) Delete(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -198,7 +198,7 @@ func (h *WishHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	query := `DELETE FROM wishes WHERE id = $1`
-	result, err := h.conn.Exec(context.Background(), query, id)
+	result, err := s.conn.Exec(context.Background(), query, id)
 	if err != nil {
 		http.Error(w, "Failed to delete wish", http.StatusInternalServerError)
 		return
